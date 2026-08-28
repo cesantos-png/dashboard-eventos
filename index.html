@@ -119,11 +119,11 @@
   <div class="grid">
     <div class="panel">
       <h2>Inscritos por tipo</h2>
-      <canvas id="chartTipo"></canvas>
+      <div id="chartTipoBox"><canvas id="chartTipo"></canvas></div>
     </div>
     <div class="panel">
       <h2>Ocupação por hotel</h2>
-      <canvas id="chartHotel"></canvas>
+      <div id="chartHotelBox"><canvas id="chartHotel"></canvas></div>
     </div>
   </div>
 
@@ -252,12 +252,17 @@ function renderDashboard(rows){
     <div class="kpi"><div class="label">Valor total (rateio)</div><div class="value">${fmtMoney(valorTotal)}</div></div>
   `;
 
-  // gráficos (protegidos: se o Chart.js não carregar, o resto do painel continua funcionando)
+  // gráficos (protegidos: se o Chart.js não carregar, o resto do painel continua funcionando,
+  // e o DOM dos dois gráficos é sempre reconstruído do zero para suportar recarregar várias vezes)
+  if (chartTipo) { try { chartTipo.destroy(); } catch(e){} chartTipo = null; }
+  if (chartHotel) { try { chartHotel.destroy(); } catch(e){} chartHotel = null; }
+  document.getElementById('chartTipoBox').innerHTML = '<canvas id="chartTipo"></canvas>';
+  document.getElementById('chartHotelBox').innerHTML = '<canvas id="chartHotel"></canvas>';
+
   try {
     if (typeof Chart === 'undefined') throw new Error('biblioteca de gráficos não carregou');
 
     const porTipo = countBy(rows, 'tipo');
-    if (chartTipo) chartTipo.destroy();
     chartTipo = new Chart(document.getElementById('chartTipo'), {
       type: 'bar',
       data: {
@@ -268,7 +273,6 @@ function renderDashboard(rows){
     });
 
     const porHotel = countBy(rows, 'nome_hotel');
-    if (chartHotel) chartHotel.destroy();
     chartHotel = new Chart(document.getElementById('chartHotel'), {
       type: 'pie',
       data: {
@@ -277,8 +281,9 @@ function renderDashboard(rows){
       }
     });
   } catch (err) {
-    document.getElementById('chartTipo').replaceWith(document.createTextNode('Gráfico indisponível: ' + err.message));
-    document.getElementById('chartHotel').replaceWith(document.createTextNode('Gráfico indisponível: ' + err.message));
+    const msg = '<p style="color:var(--muted);font-size:13px;margin:0;">Gráfico indisponível: ' + err.message + '</p>';
+    document.getElementById('chartTipoBox').innerHTML = msg;
+    document.getElementById('chartHotelBox').innerHTML = msg;
   }
 
   // tabela: forma de pagamento (qtde + valor)

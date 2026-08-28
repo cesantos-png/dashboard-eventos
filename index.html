@@ -94,6 +94,17 @@
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);}
   th{color:var(--muted);font-weight:600;}
+
+  .tabs{
+    display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px;
+  }
+  .tab-btn{
+    border:none;background:none;padding:10px 16px;font-size:14px;color:var(--muted);
+    cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;
+  }
+  .tab-btn:hover{color:var(--text);}
+  .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+  .tab-panel[hidden]{display:none;}
 </style>
 </head>
 <body>
@@ -123,31 +134,48 @@
 
   <div class="kpis" id="kpis"></div>
 
-  <div class="grid">
-    <div class="panel">
-      <h2>Inscritos por tipo</h2>
-      <div id="chartTipoBox"><canvas id="chartTipo"></canvas></div>
-    </div>
-    <div class="panel">
-      <h2>Ocupação por hotel</h2>
-      <div id="chartHotelBox"><canvas id="chartHotel"></canvas></div>
-    </div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="geral">Visão Geral</button>
+    <button class="tab-btn" data-tab="financeiro">Financeiro</button>
   </div>
 
-  <div class="grid">
-    <div class="panel">
-      <h2>Forma de pagamento</h2>
-      <table id="tblPagamento"></table>
+  <div class="tab-panel" id="tab-geral">
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Inscritos por tipo</h2>
+        <div id="chartTipoBox"><canvas id="chartTipo"></canvas></div>
+      </div>
+      <div class="panel">
+        <h2>Ocupação por hotel</h2>
+        <div id="chartHotelBox"><canvas id="chartHotel"></canvas></div>
+      </div>
     </div>
+
     <div class="panel">
       <h2>Tipo de quarto x hotel</h2>
       <table id="tblQuarto"></table>
     </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <h2>Cadastros incompletos (sem e-mail, CPF ou telefone)</h2>
+      <table id="tblIncompletos"></table>
+    </div>
+
   </div>
 
-  <div class="panel">
-    <h2>Cadastros incompletos (sem e-mail, CPF ou telefone)</h2>
-    <table id="tblIncompletos"></table>
+  <div class="tab-panel" id="tab-financeiro" hidden>
+
+    <div class="panel">
+      <h2>Custo por cluster/filial</h2>
+      <table id="tblCluster"></table>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <h2>Forma de pagamento</h2>
+      <table id="tblPagamento"></table>
+    </div>
+
   </div>
 
 </main>
@@ -171,6 +199,22 @@ let lastRenderAt = null;
 
 document.getElementById('refreshBtn').addEventListener('click', () => loadFromSheet());
 fileInput.addEventListener('change', e => { if (e.target.files.length) loadFromFile(e.target.files[0]); });
+
+// -------- abas --------
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
+    btn.classList.add('active');
+    const panel = document.getElementById('tab-' + btn.dataset.tab);
+    panel.hidden = false;
+    // os gráficos podem ter sido criados com o painel escondido (tamanho zero); reajusta ao mostrar
+    if (btn.dataset.tab === 'geral') {
+      if (chartTipo) chartTipo.resize();
+      if (chartHotel) chartHotel.resize();
+    }
+  });
+});
 
 // -------- carregamento a partir do Google Sheets --------
 async function loadFromSheet(){
@@ -313,6 +357,14 @@ function renderDashboard(rows){
   document.getElementById('tblPagamento').innerHTML = `
     <tr><th>Forma</th><th>Qtde</th><th>Valor</th></tr>
     ${Object.keys(qtdePag).map(k => `<tr><td>${k}</td><td>${qtdePag[k]}</td><td>${fmtMoney(valorPag[k]||0)}</td></tr>`).join('')}
+  `;
+
+  // tabela: custo por cluster/filial (qtde, valor total, ticket médio)
+  const qtdeCluster = countBy(rows, 'cnpj_cluster');
+  const valorCluster = sumBy(rows, 'cnpj_cluster', 'rateio');
+  document.getElementById('tblCluster').innerHTML = `
+    <tr><th>Cluster/Filial</th><th>Qtde inscritos</th><th>Valor total</th><th>Ticket médio</th></tr>
+    ${Object.keys(qtdeCluster).map(k => `<tr><td>${k}</td><td>${qtdeCluster[k]}</td><td>${fmtMoney(valorCluster[k]||0)}</td><td>${fmtMoney((valorCluster[k]||0) / qtdeCluster[k])}</td></tr>`).join('')}
   `;
 
   // tabela: tipo_quarto x hotel

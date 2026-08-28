@@ -5,7 +5,7 @@
 <title>Dashboard do Evento</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.js"></script>
 <style>
   :root{
     --bg:#f5f6f8;
@@ -252,28 +252,34 @@ function renderDashboard(rows){
     <div class="kpi"><div class="label">Valor total (rateio)</div><div class="value">${fmtMoney(valorTotal)}</div></div>
   `;
 
-  // gráfico: inscritos por tipo
-  const porTipo = countBy(rows, 'tipo');
-  if (chartTipo) chartTipo.destroy();
-  chartTipo = new Chart(document.getElementById('chartTipo'), {
-    type: 'bar',
-    data: {
-      labels: Object.keys(porTipo),
-      datasets: [{ data: Object.values(porTipo), backgroundColor:'#2f5597' }]
-    },
-    options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
-  });
+  // gráficos (protegidos: se o Chart.js não carregar, o resto do painel continua funcionando)
+  try {
+    if (typeof Chart === 'undefined') throw new Error('biblioteca de gráficos não carregou');
 
-  // gráfico: ocupação por hotel
-  const porHotel = countBy(rows, 'nome_hotel');
-  if (chartHotel) chartHotel.destroy();
-  chartHotel = new Chart(document.getElementById('chartHotel'), {
-    type: 'pie',
-    data: {
-      labels: Object.keys(porHotel),
-      datasets: [{ data: Object.values(porHotel), backgroundColor:['#2f5597','#5b8def','#8fb4f2','#c3d7f8','#e8edf7'] }]
-    }
-  });
+    const porTipo = countBy(rows, 'tipo');
+    if (chartTipo) chartTipo.destroy();
+    chartTipo = new Chart(document.getElementById('chartTipo'), {
+      type: 'bar',
+      data: {
+        labels: Object.keys(porTipo),
+        datasets: [{ data: Object.values(porTipo), backgroundColor:'#2f5597' }]
+      },
+      options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+    });
+
+    const porHotel = countBy(rows, 'nome_hotel');
+    if (chartHotel) chartHotel.destroy();
+    chartHotel = new Chart(document.getElementById('chartHotel'), {
+      type: 'pie',
+      data: {
+        labels: Object.keys(porHotel),
+        datasets: [{ data: Object.values(porHotel), backgroundColor:['#2f5597','#5b8def','#8fb4f2','#c3d7f8','#e8edf7'] }]
+      }
+    });
+  } catch (err) {
+    document.getElementById('chartTipo').replaceWith(document.createTextNode('Gráfico indisponível: ' + err.message));
+    document.getElementById('chartHotel').replaceWith(document.createTextNode('Gráfico indisponível: ' + err.message));
+  }
 
   // tabela: forma de pagamento (qtde + valor)
   const qtdePag = countBy(rows, 'forma_pagamento');

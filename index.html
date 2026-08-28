@@ -8,7 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js"></script>
 <style>
   :root{
-    --bg:#f5f6f8;
+    --bg:#ffffff;
     --card:#ffffff;
     --border:#e2e5ea;
     --text:#1f2430;
@@ -28,9 +28,13 @@
   header{
     padding:24px 32px;
     border-bottom:1px solid var(--border);
-    background:var(--card);
+    background:#1b2d41;
+    display:flex;
+    align-items:center;
+    gap:16px;
   }
-  header h1{margin:0;font-size:20px;}
+  header img{height:40px;}
+  header h1{margin:0;font-size:33px;color:#ffffff;}
   header p{margin:4px 0 0;color:var(--muted);font-size:13px;}
 
   main{padding:24px 32px;max-width:1100px;margin:0 auto;}
@@ -95,8 +99,11 @@
 <body>
 
 <header>
-  <h1>Dashboard do Evento</h1>
-  <p>Dados lidos diretamente da planilha Google Sheets. O painel se atualiza automaticamente.</p>
+  <img src="logo-ahi.png" alt="AHI">
+  <div>
+    <h1>Dashboard do Evento</h1>
+    <p>Dados lidos diretamente da planilha Google Sheets. O painel se atualiza automaticamente.</p>
+  </div>
 </header>
 
 <main>
@@ -281,7 +288,7 @@ function renderDashboard(rows){
       type: 'bar',
       data: {
         labels: Object.keys(porTipo),
-        datasets: [{ data: Object.values(porTipo), backgroundColor:'#2f5597' }]
+        datasets: [{ data: Object.values(porTipo), backgroundColor:'#ff6c07' }]
       },
       options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
     });
@@ -291,7 +298,7 @@ function renderDashboard(rows){
       type: 'pie',
       data: {
         labels: Object.keys(porHotel),
-        datasets: [{ data: Object.values(porHotel), backgroundColor:['#2f5597','#5b8def','#8fb4f2','#c3d7f8','#e8edf7'] }]
+        datasets: [{ data: Object.values(porHotel), backgroundColor:['#263142','#a6a6a6','#00b4e2','#c3d7f8','#e8edf7'] }]
       }
     });
   } catch (err) {

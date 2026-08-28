@@ -159,6 +159,8 @@ const errorBox   = document.getElementById('errorBox');
 const fileInput  = document.getElementById('fileInput');
 let chartTipo, chartHotel;
 let autoTimer;
+let lastCsvText = null;   // último conteúdo já renderizado, para só re-renderizar quando mudar
+let lastRenderAt = null;
 
 document.getElementById('refreshBtn').addEventListener('click', () => loadFromSheet());
 fileInput.addEventListener('change', e => { if (e.target.files.length) loadFromFile(e.target.files[0]); });
@@ -166,7 +168,7 @@ fileInput.addEventListener('change', e => { if (e.target.files.length) loadFromF
 // -------- carregamento a partir do Google Sheets --------
 async function loadFromSheet(){
   statusDot.className = 'dot';
-  statusText.textContent = 'Atualizando…';
+  statusText.textContent = 'Verificando planilha…';
   try {
     const res = await fetch(CSV_URL + '&_=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -175,15 +177,27 @@ async function loadFromSheet(){
       // resposta começou com "<" (HTML de login/erro) em vez de CSV
       throw new Error('Planilha não está pública');
     }
+
+    const now = new Date();
+    errorBox.style.display = 'none';
+    statusDot.className = 'dot ok';
+
+    if (csvText === lastCsvText) {
+      // nada mudou na planilha desde a última renderização: não redesenha o painel
+      statusText.textContent = 'Sem dados novos (verificado às ' + now.toLocaleTimeString('pt-BR') +
+        (lastRenderAt ? ', última atualização às ' + lastRenderAt.toLocaleTimeString('pt-BR') : '') +
+        ') — nova verificação em ' + (REFRESH_MS/1000) + 's';
+      return;
+    }
+
     const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
     if (!parsed.data.length) throw new Error('Planilha vazia ou aba "Base" não encontrada');
 
     renderDashboard(parsed.data);
-    errorBox.style.display = 'none';
-    statusDot.className = 'dot ok';
-    const now = new Date();
+    lastCsvText = csvText;
+    lastRenderAt = now;
     statusText.textContent = 'Atualizado às ' + now.toLocaleTimeString('pt-BR') +
-      ' — ' + parsed.data.length + ' registros (auto-atualiza a cada ' + (REFRESH_MS/1000) + 's)';
+      ' — ' + parsed.data.length + ' registros (verifica novidades a cada ' + (REFRESH_MS/1000) + 's)';
   } catch (err) {
     statusDot.className = 'dot err';
     statusText.textContent = 'Falha ao atualizar automaticamente (' + err.message + ')';

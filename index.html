@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Dashboard do Evento</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
@@ -14,6 +15,8 @@
     --muted:#6b7280;
     --accent:#2f5597;
     --accent-soft:#e8edf7;
+    --ok:#2e9e5b;
+    --err:#c0392b;
   }
   *{box-sizing:border-box;}
   body{
@@ -32,26 +35,32 @@
 
   main{padding:24px 32px;max-width:1100px;margin:0 auto;}
 
-  #uploadBox{
-    border:2px dashed var(--border);
-    border-radius:10px;
-    padding:32px;
-    text-align:center;
-    background:var(--card);
-    color:var(--muted);
-    cursor:pointer;
-    transition:border-color .15s;
+  #statusBar{
+    display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
+    margin-bottom:16px;font-size:13px;color:var(--muted);
   }
-  #uploadBox.dragover{border-color:var(--accent);color:var(--accent);}
-  #uploadBox input{display:none;}
+  #statusBar button{
+    border:1px solid var(--border);background:var(--card);
+    padding:6px 12px;border-radius:6px;cursor:pointer;color:var(--text);
+  }
+  #statusBar button:hover{border-color:var(--accent);color:var(--accent);}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted);}
+  .dot.ok{background:var(--ok);}
+  .dot.err{background:var(--err);}
 
-  #dash{display:none;}
+  #errorBox{
+    display:none;
+    background:#fdf1ef;border:1px solid #f2c6bd;color:var(--err);
+    border-radius:10px;padding:16px 18px;margin-bottom:16px;font-size:13px;line-height:1.5;
+  }
+  #errorBox b{display:block;margin-bottom:4px;}
+  #errorBox input[type=file]{margin-top:8px;}
 
   .kpis{
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
     gap:14px;
-    margin:20px 0;
+    margin-bottom:20px;
   }
   .kpi{
     background:var(--card);
@@ -81,106 +90,122 @@
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);}
   th{color:var(--muted);font-weight:600;}
-
-  #reloadBar{
-    display:flex;justify-content:space-between;align-items:center;
-    margin-bottom:12px;font-size:13px;color:var(--muted);
-  }
-  #reloadBar button{
-    border:1px solid var(--border);background:var(--card);
-    padding:6px 12px;border-radius:6px;cursor:pointer;color:var(--text);
-  }
 </style>
 </head>
 <body>
 
 <header>
   <h1>Dashboard do Evento</h1>
-  <p>Carregue o arquivo da base de dados (.xlsx ou .csv) para gerar o painel.</p>
+  <p>Dados lidos diretamente da planilha Google Sheets. O painel se atualiza automaticamente.</p>
 </header>
 
 <main>
 
-  <div id="uploadBox">
-    <div>Clique para selecionar o arquivo, ou arraste aqui</div>
-    <div style="font-size:12px;margin-top:6px;">Aba "Base" com as colunas: data, tipo, nome, sigla_hotel, nome_hotel, tipo_quarto, forma_pagamento, rateio, acompanhante...</div>
-    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+  <div id="statusBar">
+    <span><span class="dot" id="statusDot"></span><span id="statusText">Carregando dados da planilha…</span></span>
+    <button id="refreshBtn">Atualizar agora</button>
   </div>
 
-  <div id="dash">
-    <div id="reloadBar">
-      <span id="fileName"></span>
-      <button id="reloadBtn">Carregar outro arquivo</button>
-    </div>
+  <div id="errorBox">
+    <b>Não foi possível ler a planilha automaticamente.</b>
+    Verifique se ela está compartilhada como "Qualquer pessoa com o link — Leitor"
+    (Compartilhar → Acesso geral) e clique em "Atualizar agora".
+    Como alternativa, carregue o arquivo manualmente:
+    <br><input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+  </div>
 
-    <div class="kpis" id="kpis"></div>
+  <div class="kpis" id="kpis"></div>
 
-    <div class="grid">
-      <div class="panel">
-        <h2>Inscritos por tipo</h2>
-        <canvas id="chartTipo"></canvas>
-      </div>
-      <div class="panel">
-        <h2>Ocupação por hotel</h2>
-        <canvas id="chartHotel"></canvas>
-      </div>
-    </div>
-
-    <div class="grid">
-      <div class="panel">
-        <h2>Forma de pagamento</h2>
-        <table id="tblPagamento"></table>
-      </div>
-      <div class="panel">
-        <h2>Tipo de quarto x hotel</h2>
-        <table id="tblQuarto"></table>
-      </div>
-    </div>
-
+  <div class="grid">
     <div class="panel">
-      <h2>Cadastros incompletos (sem e-mail, CPF ou telefone)</h2>
-      <table id="tblIncompletos"></table>
+      <h2>Inscritos por tipo</h2>
+      <canvas id="chartTipo"></canvas>
     </div>
+    <div class="panel">
+      <h2>Ocupação por hotel</h2>
+      <canvas id="chartHotel"></canvas>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Forma de pagamento</h2>
+      <table id="tblPagamento"></table>
+    </div>
+    <div class="panel">
+      <h2>Tipo de quarto x hotel</h2>
+      <table id="tblQuarto"></table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Cadastros incompletos (sem e-mail, CPF ou telefone)</h2>
+    <table id="tblIncompletos"></table>
   </div>
 
 </main>
 
 <script>
+// -------- configuração da fonte de dados --------
+const SHEET_ID     = '1YpbQ2k3uSBfVhu4Ryfp8ZNH4HJwfIR2qQjHhuz9Hy4o';
+const SHEET_NAME    = 'Base';
+const CSV_URL       = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+const REFRESH_MS    = 60000; // atualiza sozinho a cada 60s
+
 // -------- referências de elementos --------
-const uploadBox  = document.getElementById('uploadBox');
+const statusDot  = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const errorBox   = document.getElementById('errorBox');
 const fileInput  = document.getElementById('fileInput');
-const dash       = document.getElementById('dash');
-const fileNameEl = document.getElementById('fileName');
 let chartTipo, chartHotel;
+let autoTimer;
 
-uploadBox.addEventListener('click', () => fileInput.click());
-uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.classList.add('dragover'); });
-uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('dragover'));
-uploadBox.addEventListener('drop', e => {
-  e.preventDefault();
-  uploadBox.classList.remove('dragover');
-  if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', e => { if (e.target.files.length) loadFile(e.target.files[0]); });
+document.getElementById('refreshBtn').addEventListener('click', () => loadFromSheet());
+fileInput.addEventListener('change', e => { if (e.target.files.length) loadFromFile(e.target.files[0]); });
 
-document.getElementById('reloadBtn').addEventListener('click', () => {
-  dash.style.display = 'none';
-  uploadBox.style.display = 'block';
-  fileInput.value = '';
-});
+// -------- carregamento a partir do Google Sheets --------
+async function loadFromSheet(){
+  statusDot.className = 'dot';
+  statusText.textContent = 'Atualizando…';
+  try {
+    const res = await fetch(CSV_URL + '&_=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const csvText = await res.text();
+    if (/^</.test(csvText.trim())) {
+      // resposta começou com "<" (HTML de login/erro) em vez de CSV
+      throw new Error('Planilha não está pública');
+    }
+    const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+    if (!parsed.data.length) throw new Error('Planilha vazia ou aba "Base" não encontrada');
 
-// -------- leitura do arquivo (xlsx ou csv) --------
-function loadFile(file){
+    renderDashboard(parsed.data);
+    errorBox.style.display = 'none';
+    statusDot.className = 'dot ok';
+    const now = new Date();
+    statusText.textContent = 'Atualizado às ' + now.toLocaleTimeString('pt-BR') +
+      ' — ' + parsed.data.length + ' registros (auto-atualiza a cada ' + (REFRESH_MS/1000) + 's)';
+  } catch (err) {
+    statusDot.className = 'dot err';
+    statusText.textContent = 'Falha ao atualizar automaticamente (' + err.message + ')';
+    errorBox.style.display = 'block';
+  } finally {
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(loadFromSheet, REFRESH_MS);
+  }
+}
+
+// -------- carregamento manual (fallback) --------
+function loadFromFile(file){
   const reader = new FileReader();
   reader.onload = (e) => {
     const wb = XLSX.read(e.target.result, { type:'array', cellDates:true });
-    const sheetName = wb.SheetNames.includes('Base') ? 'Base' : wb.SheetNames[0];
+    const sheetName = wb.SheetNames.includes(SHEET_NAME) ? SHEET_NAME : wb.SheetNames[0];
     const sheet = wb.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { defval:'' });
     renderDashboard(data);
-    fileNameEl.textContent = file.name + ' — aba "' + sheetName + '" — ' + data.length + ' registros';
-    uploadBox.style.display = 'none';
-    dash.style.display = 'block';
+    errorBox.style.display = 'none';
+    statusDot.className = 'dot ok';
+    statusText.textContent = 'Carregado de "' + file.name + '" — ' + data.length + ' registros (arquivo local, sem auto-atualização)';
   };
   reader.readAsArrayBuffer(file);
 }
@@ -194,11 +219,16 @@ function countBy(rows, key){
   });
   return out;
 }
+function toNumber(v){
+  if (typeof v === 'number') return v;
+  const n = parseFloat((v ?? '').toString().trim().replace(/\./g,'').replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+}
 function sumBy(rows, groupKey, valueKey){
   const out = {};
   rows.forEach(r => {
     const v = (r[groupKey] ?? '').toString().trim() || '(vazio)';
-    out[v] = (out[v] || 0) + (parseFloat(r[valueKey]) || 0);
+    out[v] = (out[v] || 0) + toNumber(r[valueKey]);
   });
   return out;
 }
@@ -213,7 +243,7 @@ function renderDashboard(rows){
   const totalInscritos = rows.length;
   const totalAcompanhantes = rows.filter(r => (r.acompanhante||'').toString().trim().toLowerCase() === 'sim').length;
   const hoteis = new Set(rows.map(r => (r.nome_hotel||'').toString().trim()).filter(Boolean));
-  const valorTotal = rows.reduce((s,r) => s + (parseFloat(r.rateio) || 0), 0);
+  const valorTotal = rows.reduce((s,r) => s + toNumber(r.rateio), 0);
 
   document.getElementById('kpis').innerHTML = `
     <div class="kpi"><div class="label">Total de inscritos</div><div class="value">${totalInscritos}</div></div>
@@ -280,6 +310,9 @@ function renderDashboard(rows){
     ${incompletos.map(r => `<tr><td>${r.nome||''}</td><td>${r.email||'—'}</td><td>${r.cpf||'—'}</td><td>${r.telefone||'—'}</td></tr>`).join('')}
   ` : `<tr><td>Nenhum cadastro incompleto encontrado.</td></tr>`;
 }
+
+// -------- início --------
+loadFromSheet();
 </script>
 
 </body>

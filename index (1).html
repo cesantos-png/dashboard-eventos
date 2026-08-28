@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard do Evento</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#f5f6f8;
+    --card:#ffffff;
+    --border:#e2e5ea;
+    --text:#1f2430;
+    --muted:#6b7280;
+    --accent:#2f5597;
+    --accent-soft:#e8edf7;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+  }
+  header{
+    padding:24px 32px;
+    border-bottom:1px solid var(--border);
+    background:var(--card);
+  }
+  header h1{margin:0;font-size:20px;}
+  header p{margin:4px 0 0;color:var(--muted);font-size:13px;}
+
+  main{padding:24px 32px;max-width:1100px;margin:0 auto;}
+
+  #uploadBox{
+    border:2px dashed var(--border);
+    border-radius:10px;
+    padding:32px;
+    text-align:center;
+    background:var(--card);
+    color:var(--muted);
+    cursor:pointer;
+    transition:border-color .15s;
+  }
+  #uploadBox.dragover{border-color:var(--accent);color:var(--accent);}
+  #uploadBox input{display:none;}
+
+  #dash{display:none;}
+
+  .kpis{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:14px;
+    margin:20px 0;
+  }
+  .kpi{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px 18px;
+  }
+  .kpi .label{font-size:12px;color:var(--muted);}
+  .kpi .value{font-size:26px;font-weight:700;color:var(--accent);margin-top:4px;}
+
+  .grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+    margin-bottom:16px;
+  }
+  @media (max-width:720px){ .grid{grid-template-columns:1fr;} }
+
+  .panel{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px;
+  }
+  .panel h2{margin:0 0 12px;font-size:14px;color:var(--text);}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:600;}
+
+  #reloadBar{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:12px;font-size:13px;color:var(--muted);
+  }
+  #reloadBar button{
+    border:1px solid var(--border);background:var(--card);
+    padding:6px 12px;border-radius:6px;cursor:pointer;color:var(--text);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Dashboard do Evento</h1>
+  <p>Carregue o arquivo da base de dados (.xlsx ou .csv) para gerar o painel.</p>
+</header>
+
+<main>
+
+  <div id="uploadBox">
+    <div>Clique para selecionar o arquivo, ou arraste aqui</div>
+    <div style="font-size:12px;margin-top:6px;">Aba "Base" com as colunas: data, tipo, nome, sigla_hotel, nome_hotel, tipo_quarto, forma_pagamento, rateio, acompanhante...</div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+  </div>
+
+  <div id="dash">
+    <div id="reloadBar">
+      <span id="fileName"></span>
+      <button id="reloadBtn">Carregar outro arquivo</button>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Inscritos por tipo</h2>
+        <canvas id="chartTipo"></canvas>
+      </div>
+      <div class="panel">
+        <h2>Ocupação por hotel</h2>
+        <canvas id="chartHotel"></canvas>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Forma de pagamento</h2>
+        <table id="tblPagamento"></table>
+      </div>
+      <div class="panel">
+        <h2>Tipo de quarto x hotel</h2>
+        <table id="tblQuarto"></table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Cadastros incompletos (sem e-mail, CPF ou telefone)</h2>
+      <table id="tblIncompletos"></table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// -------- referências de elementos --------
+const uploadBox  = document.getElementById('uploadBox');
+const fileInput  = document.getElementById('fileInput');
+const dash       = document.getElementById('dash');
+const fileNameEl = document.getElementById('fileName');
+let chartTipo, chartHotel;
+
+uploadBox.addEventListener('click', () => fileInput.click());
+uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.classList.add('dragover'); });
+uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('dragover'));
+uploadBox.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadBox.classList.remove('dragover');
+  if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) loadFile(e.target.files[0]); });
+
+document.getElementById('reloadBtn').addEventListener('click', () => {
+  dash.style.display = 'none';
+  uploadBox.style.display = 'block';
+  fileInput.value = '';
+});
+
+// -------- leitura do arquivo (xlsx ou csv) --------
+function loadFile(file){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const wb = XLSX.read(e.target.result, { type:'array', cellDates:true });
+    const sheetName = wb.SheetNames.includes('Base') ? 'Base' : wb.SheetNames[0];
+    const sheet = wb.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(sheet, { defval:'' });
+    renderDashboard(data);
+    fileNameEl.textContent = file.name + ' — aba "' + sheetName + '" — ' + data.length + ' registros';
+    uploadBox.style.display = 'none';
+    dash.style.display = 'block';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// -------- helpers --------
+function countBy(rows, key){
+  const out = {};
+  rows.forEach(r => {
+    const v = (r[key] ?? '').toString().trim() || '(vazio)';
+    out[v] = (out[v] || 0) + 1;
+  });
+  return out;
+}
+function sumBy(rows, groupKey, valueKey){
+  const out = {};
+  rows.forEach(r => {
+    const v = (r[groupKey] ?? '').toString().trim() || '(vazio)';
+    out[v] = (out[v] || 0) + (parseFloat(r[valueKey]) || 0);
+  });
+  return out;
+}
+function fmtMoney(n){
+  return n.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+}
+
+// -------- render principal --------
+function renderDashboard(rows){
+
+  // KPIs
+  const totalInscritos = rows.length;
+  const totalAcompanhantes = rows.filter(r => (r.acompanhante||'').toString().trim().toLowerCase() === 'sim').length;
+  const hoteis = new Set(rows.map(r => (r.nome_hotel||'').toString().trim()).filter(Boolean));
+  const valorTotal = rows.reduce((s,r) => s + (parseFloat(r.rateio) || 0), 0);
+
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi"><div class="label">Total de inscritos</div><div class="value">${totalInscritos}</div></div>
+    <div class="kpi"><div class="label">Acompanhantes</div><div class="value">${totalAcompanhantes}</div></div>
+    <div class="kpi"><div class="label">Hotéis distintos</div><div class="value">${hoteis.size}</div></div>
+    <div class="kpi"><div class="label">Valor total (rateio)</div><div class="value">${fmtMoney(valorTotal)}</div></div>
+  `;
+
+  // gráfico: inscritos por tipo
+  const porTipo = countBy(rows, 'tipo');
+  if (chartTipo) chartTipo.destroy();
+  chartTipo = new Chart(document.getElementById('chartTipo'), {
+    type: 'bar',
+    data: {
+      labels: Object.keys(porTipo),
+      datasets: [{ data: Object.values(porTipo), backgroundColor:'#2f5597' }]
+    },
+    options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+  });
+
+  // gráfico: ocupação por hotel
+  const porHotel = countBy(rows, 'nome_hotel');
+  if (chartHotel) chartHotel.destroy();
+  chartHotel = new Chart(document.getElementById('chartHotel'), {
+    type: 'pie',
+    data: {
+      labels: Object.keys(porHotel),
+      datasets: [{ data: Object.values(porHotel), backgroundColor:['#2f5597','#5b8def','#8fb4f2','#c3d7f8','#e8edf7'] }]
+    }
+  });
+
+  // tabela: forma de pagamento (qtde + valor)
+  const qtdePag = countBy(rows, 'forma_pagamento');
+  const valorPag = sumBy(rows, 'forma_pagamento', 'rateio');
+  document.getElementById('tblPagamento').innerHTML = `
+    <tr><th>Forma</th><th>Qtde</th><th>Valor</th></tr>
+    ${Object.keys(qtdePag).map(k => `<tr><td>${k}</td><td>${qtdePag[k]}</td><td>${fmtMoney(valorPag[k]||0)}</td></tr>`).join('')}
+  `;
+
+  // tabela: tipo_quarto x hotel
+  const quartos = [...new Set(rows.map(r => (r.tipo_quarto||'').toString().trim()).filter(Boolean))];
+  const hotelList = [...hoteis];
+  let cruz = {};
+  rows.forEach(r => {
+    const q = (r.tipo_quarto||'').toString().trim();
+    const h = (r.nome_hotel||'').toString().trim();
+    if(!q || !h) return;
+    cruz[q] = cruz[q] || {};
+    cruz[q][h] = (cruz[q][h] || 0) + 1;
+  });
+  document.getElementById('tblQuarto').innerHTML = `
+    <tr><th>Tipo Quarto</th>${hotelList.map(h => `<th>${h}</th>`).join('')}</tr>
+    ${quartos.map(q => `<tr><td>${q}</td>${hotelList.map(h => `<td>${(cruz[q] && cruz[q][h]) || 0}</td>`).join('')}</tr>`).join('')}
+  `;
+
+  // tabela: cadastros incompletos
+  const incompletos = rows.filter(r =>
+    !(r.email||'').toString().trim() ||
+    !(r.cpf||'').toString().trim() ||
+    !(r.telefone||'').toString().trim()
+  );
+  document.getElementById('tblIncompletos').innerHTML = incompletos.length ? `
+    <tr><th>Nome</th><th>E-mail</th><th>CPF</th><th>Telefone</th></tr>
+    ${incompletos.map(r => `<tr><td>${r.nome||''}</td><td>${r.email||'—'}</td><td>${r.cpf||'—'}</td><td>${r.telefone||'—'}</td></tr>`).join('')}
+  ` : `<tr><td>Nenhum cadastro incompleto encontrado.</td></tr>`;
+}
+</script>
+
+</body>
+</html>
